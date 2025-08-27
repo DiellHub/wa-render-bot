@@ -1,11 +1,12 @@
 const express = require("express");
+const fs = require('fs'); // Aggiunto il modulo File System
 const QRCode = require("qrcode");
 const axios = require("axios");
 const { Client, LocalAuth } = require("whatsapp-web.js");
 
 const SAVE_URL = process.env.SAVE_URL;
 const SAVE_TOKEN = process.env.SAVE_TOKEN;
-const PORT = process.env.PORT || 10000; // Render usa la porta 10000 di default
+const PORT = process.env.PORT || 10000;
 
 let latestQR = null;
 let isReady = false;
@@ -13,11 +14,22 @@ let statusMessage = "Inizializzazione...";
 
 console.log("🚀 Avvio del bot...");
 
+// --- INIZIO MODIFICA: Pulizia sessione ---
+const SESSION_FOLDER_PATH = './.wwebjs_auth/';
+
+// Pulisce la cartella della sessione se esiste, per forzare una nuova scansione QR
+if (fs.existsSync(SESSION_FOLDER_PATH)) {
+    console.log('🧹 Pulizia della sessione precedente...');
+    fs.rmSync(SESSION_FOLDER_PATH, { recursive: true, force: true });
+    console.log('✅ Sessione precedente rimossa con successo.');
+}
+// --- FINE MODIFICA ---
+
+
 const client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: {
     headless: true,
-    // Argomenti essenziali per ambienti con poche risorse come Render
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -25,15 +37,15 @@ const client = new Client({
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
-      '--single-process', // <- importante per ridurre la RAM
+      '--single-process',
       '--disable-gpu'
     ]
   }
 });
 
-// Log più dettagliati
 client.on("qr", (qr) => {
   latestQR = qr;
+  isReady = false; // Assicuriamoci che sia false finché non è pronto
   statusMessage = "QR Code ricevuto. Scansiona per continuare.";
   console.log("[QR] Aggiornato. Apri /qr per scansionarlo.");
 });
@@ -55,21 +67,21 @@ client.on('auth_failure', msg => {
 
 client.on("ready", () => {
   isReady = true;
+  latestQR = null; // Nasconde il QR code una volta che il bot è pronto
   statusMessage = "Bot pronto e operativo!";
   console.log("✅ Bot pronto su Render!");
 });
 
 client.on("disconnected", (reason) => {
   isReady = false;
-  statusMessage = `Disconnesso: ${reason}. Riavvio in corso...`;
-  console.log("⚠️ Disconnesso:", reason);
-  // Potrebbe essere necessario un riavvio o una re-inizializzazione qui
-  client.initialize();
+  statusMessage = `Disconnesso: ${reason}. Il servizio si riavvierà automaticamente.`;
+  console.log(`⚠️ Disconnesso: ${reason}. In attesa del riavvio automatico di Render.`);
+  // Non chiamiamo client.initialize() qui per evitare loop. Lasciamo che Render gestisca il riavvio.
 });
 
 client.on("message", async (msg) => {
   try {
-    if (!isReady) return; // Non processare messaggi se non è pronto
+    if (!isReady) return;
     if (!SAVE_URL || !SAVE_TOKEN) return;
     
     await axios.post(SAVE_URL, new URLSearchParams({
@@ -91,10 +103,13 @@ const app = express();
 
 app.get("/qr", async (req, res) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
+  if (isReady) {
+    return res.end(`<h3>✅ Bot già connesso e operativo!</h3><p>Stato: ${statusMessage}</p>`);
+  }
   if (!latestQR) {
     return res.end(`<h3>Nessun QR al momento.</h3>
     <p>Stato attuale: ${statusMessage}</p>
-    <p>Se hai appena deployato, attendi qualche secondo o controlla i log.</p>
+    <p>Attendi qualche secondo o controlla i log.</p>
     <p><a href="/qr">Aggiorna</a></p>`);
   }
   try {
