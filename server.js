@@ -1,5 +1,5 @@
 const express = require("express");
-const fs = require('fs'); // Aggiunto il modulo File System
+const fs = require('fs');
 const QRCode = require("qrcode");
 const axios = require("axios");
 const { Client, LocalAuth } = require("whatsapp-web.js");
@@ -14,17 +14,17 @@ let statusMessage = "Inizializzazione...";
 
 console.log("🚀 Avvio del bot...");
 
-// --- INIZIO MODIFICA: Pulizia sessione ---
-const SESSION_FOLDER_PATH = './.wwebjs_auth/';
+// --- NUOVO LOG: Verifica delle variabili d'ambiente ---
+console.log(`🔗 SAVE_URL impostato: ${SAVE_URL ? 'Sì' : 'No'}`);
+console.log(`🔑 SAVE_TOKEN impostato: ${SAVE_TOKEN ? 'Sì' : 'No'}`);
+// ----------------------------------------------------
 
-// Pulisce la cartella della sessione se esiste, per forzare una nuova scansione QR
+const SESSION_FOLDER_PATH = './.wwebjs_auth/';
 if (fs.existsSync(SESSION_FOLDER_PATH)) {
     console.log('🧹 Pulizia della sessione precedente...');
     fs.rmSync(SESSION_FOLDER_PATH, { recursive: true, force: true });
     console.log('✅ Sessione precedente rimossa con successo.');
 }
-// --- FINE MODIFICA ---
-
 
 const client = new Client({
   authStrategy: new LocalAuth(),
@@ -37,7 +37,7 @@ const client = new Client({
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
-      '--single-process',
+      '--single-process', // Aggiunto per ambienti con risorse limitate
       '--disable-gpu'
     ]
   }
@@ -45,7 +45,7 @@ const client = new Client({
 
 client.on("qr", (qr) => {
   latestQR = qr;
-  isReady = false; // Assicuriamoci che sia false finché non è pronto
+  isReady = false;
   statusMessage = "QR Code ricevuto. Scansiona per continuare.";
   console.log("[QR] Aggiornato. Apri /qr per scansionarlo.");
 });
@@ -57,7 +57,7 @@ client.on("loading_screen", (percent, message) => {
 
 client.on("authenticated", () => {
   statusMessage = "Autenticazione riuscita. In attesa della prontezza del bot...";
-  console.log("✅ Autenticato");
+  console.log("✅ Autenticato. In attesa dell'evento 'ready'...");
 });
 
 client.on('auth_failure', msg => {
@@ -67,23 +67,35 @@ client.on('auth_failure', msg => {
 
 client.on("ready", () => {
   isReady = true;
-  latestQR = null; // Nasconde il QR code una volta che il bot è pronto
+  latestQR = null;
   statusMessage = "Bot pronto e operativo!";
-  console.log("✅ Bot pronto su Render!");
+  // --- NUOVO LOG: Conferma che il bot è pronto ---
+  console.log("✅✅✅ BOT PRONTO! Da ora ascolterà i messaggi. ✅✅✅");
+  // ---------------------------------------------
 });
 
 client.on("disconnected", (reason) => {
   isReady = false;
   statusMessage = `Disconnesso: ${reason}. Il servizio si riavvierà automaticamente.`;
   console.log(`⚠️ Disconnesso: ${reason}. In attesa del riavvio automatico di Render.`);
-  // Non chiamiamo client.initialize() qui per evitare loop. Lasciamo che Render gestisca il riavvio.
 });
 
 client.on("message", async (msg) => {
+  // --- NUOVO LOG: Rilevamento di ogni messaggio in arrivo ---
+  console.log(`📩 Messaggio ricevuto da ${msg.from}. Controllo lo stato...`);
+  // -------------------------------------------------------
+
+  if (!isReady) {
+    console.log("   -> Stato non pronto (isReady=false), messaggio ignorato.");
+    return;
+  }
+  if (!SAVE_URL || !SAVE_TOKEN) {
+    console.log("   -> URL o TOKEN mancanti, messaggio ignorato.");
+    return;
+  }
+  
+  console.log("   -> Bot pronto, URL e TOKEN presenti. Tento l'invio a Netsons...");
   try {
-    if (!isReady) return;
-    if (!SAVE_URL || !SAVE_TOKEN) return;
-    
     await axios.post(SAVE_URL, new URLSearchParams({
       token: SAVE_TOKEN,
       from: msg.from,
@@ -91,9 +103,9 @@ client.on("message", async (msg) => {
     }).toString(), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
-    console.log("📝 Messaggio inoltrato a Netsons:", msg.from);
+    console.log("   -> ✅ Messaggio inoltrato con successo a Netsons.");
   } catch (err) {
-    console.error("Errore invio a Netsons:", err.response ? err.response.data : err.message);
+    console.error("   -> ❌ Errore durante l'invio a Netsons:", err.response ? err.response.data : err.message);
   }
 });
 
