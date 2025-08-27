@@ -5,7 +5,7 @@ const { Client, LocalAuth } = require("whatsapp-web.js");
 
 const SAVE_URL = process.env.SAVE_URL;   // es: https://gestionaleid.netsons.org/save.php
 const SAVE_TOKEN = process.env.SAVE_TOKEN; // lo stesso token messo in save.php
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 let latestQR = null;
 let isReady = false;
@@ -91,3 +91,4 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`HTTP server su :${PORT}`);
 });
+
